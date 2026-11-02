@@ -17,3 +17,66 @@ $('download').onclick=()=>{savedRequested=true;status('ส่งคำสั่�
 $('share').onclick=async()=>{if(!lastBlob)return;try{const file=new File([lastBlob],lastFile,{type:lastMime});await navigator.share({files:[file],title:lastFile});savedRequested=true;status('ส่งไฟล์ไปยังเมนูแชร์ของ Android แล้ว — ตรวจสอบว่าปลายทางบันทึกจริง');}catch(e){if(e.name!=='AbortError')status('แชร์ไม่สำเร็จ: '+e.message+' — ใช้ปุ่มดาวน์โหลดแทน')}};
 
 </script></body></html>
+<!-- Camera Studio V1.5 Native Camera Add-on: paste immediately before </body> in GitHub index.html -->
+<style>
+#nativeCam15{position:fixed;inset:auto 10px 10px 10px;z-index:99999;background:#132039;color:white;border:1px solid #526782;border-radius:16px;padding:14px;box-shadow:0 8px 30px #0009;font:15px system-ui,sans-serif;max-width:520px;margin:auto}
+#nativeCam15 button{border:0;border-radius:10px;padding:12px 14px;margin:4px;background:#2563eb;color:white;font-weight:700}
+#nativeCam15 button:disabled{opacity:.45}#nativeCam15 .minor{background:#475569}#nativeCam15 .ok{background:#0f766e}
+#nativeCam15 .tiny{font-size:12px;color:#cbd5e1}#nativeCam15 .line{display:flex;gap:5px;flex-wrap:wrap}#nativeCam15 select{padding:9px;border-radius:8px;background:#fff;color:#111}
+</style>
+<div id="nativeCam15">
+  <div style="display:flex;justify-content:space-between;align-items:center"><strong>📱 ถ่ายด้วยกล้องมือถือ V1.5</strong><button class="minor" id="nc15Hide" type="button">ซ่อน</button></div>
+  <div id="nc15Context" class="tiny"></div>
+  <div class="line" style="align-items:center"><label for="nc15Clip">คลิป</label><select id="nc15Clip"></select><label for="nc15Scene">ฉาก</label><select id="nc15Scene"></select></div>
+  <div class="line"><button id="nc15Capture" type="button">📹 ถ่ายด้วยกล้องมือถือ</button><button id="nc15Save" class="ok" type="button" disabled>⬇️ บันทึกไฟล์</button><button id="nc15Next" type="button" disabled>ฉากถัดไป ➜</button></div>
+  <div id="nc15Status" class="tiny">เลือกคลิปและฉาก แล้วกดถ่าย</div>
+  <input id="nc15File" type="file" accept="video/*" capture="environment" style="display:none">
+</div>
+<button id="nc15Show" type="button" style="display:none;position:fixed;bottom:12px;right:12px;z-index:99999;padding:13px;border:0;border-radius:30px;background:#2563eb;color:white">📱 เปิดกล้องมือถือ</button>
+<script>
+(()=>{
+'use strict';
+const $=id=>document.getElementById(id), p=new URLSearchParams(location.search);
+// These query keys are optional; the existing camera page remains untouched.
+const product=p.get('productName')||p.get('product')||p.get('name')||'สินค้า';
+const key='native-camera-v15:'+location.pathname+':'+product;
+let saved={};try{saved=JSON.parse(localStorage.getItem(key)||'{}')}catch(e){}
+let clip=Math.min(5,Math.max(1,Number(p.get('clip')||p.get('clipIndex')||saved.clip||1)));
+let scene=Math.min(5,Math.max(1,Number(p.get('scene')||p.get('shot')||p.get('sceneIndex')||saved.scene||1)));
+let pending=null, objectUrl=null, downloadStarted=false;
+const safe=s=>String(s).replace(/[\\/:*?"<>|\x00-\x1f]/g,'_').slice(0,55);
+const setStatus=s=>{$('nc15Status').textContent=s};
+function persist(){localStorage.setItem(key,JSON.stringify({clip,scene}))}
+function draw(){ $('nc15Clip').value=String(clip);$('nc15Scene').value=String(scene);$('nc15Context').textContent=product+' · คลิป '+clip+'/5 · ฉาก '+scene+'/5';persist() }
+for(let i=1;i<=5;i++){for(const id of ['nc15Clip','nc15Scene']){let o=document.createElement('option');o.value=String(i);o.textContent=String(i);$(id).appendChild(o)}}
+function resetPending(){pending=null;downloadStarted=false;$('nc15File').value='';$('nc15Save').disabled=true;$('nc15Next').disabled=true;if(objectUrl){URL.revokeObjectURL(objectUrl);objectUrl=null}}
+$('nc15Clip').onchange=e=>{clip=Number(e.target.value);scene=1;resetPending();draw()};
+$('nc15Scene').onchange=e=>{scene=Number(e.target.value);resetPending();draw()};
+$('nc15Capture').onclick=()=>{$('nc15File').click()};
+$('nc15File').onchange=e=>{
+ const f=e.target.files&&e.target.files[0];if(!f){setStatus('ยังไม่ได้รับไฟล์วิดีโอ');return}
+ if(!f.type.startsWith('video/') && !/\.(mp4|webm|mov|3gp)$/i.test(f.name)){setStatus('ไฟล์ที่เลือกไม่ใช่วิดีโอ');return}
+ pending=f;downloadStarted=false;$('nc15Save').disabled=false;$('nc15Next').disabled=true;
+ setStatus('รับวิดีโอแล้ว '+(f.size/1048576).toFixed(1)+' MB — กดบันทึกไฟล์ก่อนเปลี่ยนฉาก');
+};
+$('nc15Save').onclick=()=>{
+ if(!pending)return;
+ if(objectUrl)URL.revokeObjectURL(objectUrl);
+ objectUrl=URL.createObjectURL(pending);
+ const ext=(pending.name.match(/\.[a-z0-9]+$/i)||['.mp4'])[0];
+ const a=document.createElement('a');a.href=objectUrl;a.download=safe(product)+'_Clip'+clip+'_Scene'+scene+ext;
+ document.body.appendChild(a);a.click();a.remove();downloadStarted=true;
+ $('nc15Next').disabled=false;
+ setStatus('ส่งคำสั่งดาวน์โหลดแล้ว — ตรวจไฟล์ใน Downloads ก่อนกดฉากถัดไป (เว็บยืนยันผลบันทึกจริงไม่ได้)');
+};
+$('nc15Next').onclick=()=>{
+ if(!downloadStarted)return;
+ if(scene<5)scene++;else if(clip<5){clip++;scene=1}else{setStatus('ครบ 5 คลิป × 5 ฉากแล้ว');return}
+ resetPending();draw();setStatus('พร้อมถ่ายฉากถัดไป — กดถ่ายด้วยกล้องมือถือ');
+};
+$('nc15Hide').onclick=()=>{$('nativeCam15').style.display='none';$('nc15Show').style.display='block'};
+$('nc15Show').onclick=()=>{$('nativeCam15').style.display='block';$('nc15Show').style.display='none'};
+window.addEventListener('pagehide',()=>{if(objectUrl)URL.revokeObjectURL(objectUrl)});
+draw();
+})();
+</script>
