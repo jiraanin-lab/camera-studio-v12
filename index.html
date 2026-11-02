@@ -1,82 +1,57 @@
-<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Camera Studio V1.4 Quick Save</title><style>
-:root{font-family:system-ui,'Noto Sans Thai',sans-serif;color-scheme:dark}body{margin:0;background:#0c1425;color:#eef2ff}main{max-width:620px;margin:auto;padding:18px}h1{font-size:1.45rem}p,small{color:#b8c4dd}.panel{background:#1b2942;border-radius:16px;padding:16px;margin:14px 0}.view{position:relative;background:#05070d;aspect-ratio:9/16;max-height:68vh;margin:auto;border-radius:12px;overflow:hidden}video{width:100%;height:100%;object-fit:cover}#preview{display:none}.time{position:absolute;top:12px;left:12px;background:#0009;border-radius:8px;padding:8px;font-weight:bold}#count{position:absolute;inset:0;display:grid;place-items:center;font-size:6rem;font-weight:900;text-shadow:0 3px 15px black;pointer-events:none}.buttons{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}button,a.button{padding:13px 8px;background:#743de6;color:white;border:0;border-radius:10px;font-size:1rem;text-align:center;text-decoration:none}button:disabled{opacity:.4}button.alt{background:#33435d}button.danger{background:#b83c5b}input{width:75px;padding:9px;background:#0d1729;color:white;border:1px solid #65738d;border-radius:8px}#status{color:#cbd7ee;white-space:pre-wrap}a.button{display:block}label{display:inline-block;margin:8px 0}
-</style></head><body><main><h1>📷 Camera Studio V1.4 Quick Save</h1><p>กล้อง Android ผ่าน GitHub Pages (HTTPS) พร้อมแผนถ่าย</p><div class="panel"><label>ระยะเวลาถ่าย <input id="seconds" type="number" min="3" max="120" value="13"> วินาที</label><div style="margin:10px 0"><label>คุณภาพกล้อง <select id="quality" style="padding:10px;background:#0d1729;color:white;border:1px solid #65738d;border-radius:8px"><option value="1080">Full HD 1080p (แนะนำ)</option><option value="720">HD 720p</option><option value="2160">4K (ถ้ามือถือรองรับ)</option></select></label><div id="qualityInfo" style="font-size:13px;color:#cbd7ee;margin:7px 0">รอเปิดกล้องเพื่อตรวจสอบความละเอียดจริง</div></div><section id="shootPlan" class="panel" style="display:none"><div style="font-weight:700;color:#a9c8ff">📋 แผนถ่ายจาก Creator Studio</div><h2 id="productName" style="font-size:1.12rem;margin:8px 0"></h2><div id="clipName" style="color:#b8c4dd"></div><label style="display:block">เลือกฉาก <select id="sceneSelect" style="max-width:100%;padding:10px;background:#0d1729;color:white;border:1px solid #65738d;border-radius:8px"></select></label><h3 id="sceneTitle" style="margin:8px 0"></h3><p id="sceneDetails" style="white-space:pre-line"></p><div class="buttons"><button id="prevScene" class="alt">← ฉากก่อน</button><button id="nextScene" class="alt">ฉากถัดไป →</button></div><small>บันทึกคลิปลงมือถือก่อนเปลี่ยนฉาก ระบบยังไม่ส่งสถานะกลับไป Apps Script อัตโนมัติ</small></section><div class="view"><video id="live" autoplay muted playsinline></video><video id="preview" controls playsinline></video><span id="timer" class="time">00:00</span><span id="count"></span></div><div class="buttons"><button id="open">เปิดกล้องหลัง</button><button id="start" disabled>เริ่มถ่าย</button><button id="stop" class="danger" disabled>หยุดถ่าย</button><button id="retry" class="alt" disabled>ถ่ายใหม่</button></div><p id="status" role="status">พร้อมทดสอบ — กดเปิดกล้องหลัง</p><div id="saveTools" style="display:none"><div class="buttons"><button id="saveNext">💾 บันทึก + ฉากถัดไป</button><button id="saveOnly" class="alt">💾 บันทึกฉากนี้</button></div><button id="share" class="alt" style="width:100%;margin-top:8px;display:none">📤 แชร์/บันทึกผ่านมือถือ</button><a id="download" class="button" style="margin-top:8px">ดาวน์โหลดไฟล์อีกครั้ง</a><small id="saveHint" style="display:block;margin-top:8px">ตรวจไฟล์ใน Downloads ก่อนลบหรือถ่ายใหม่ หาก Chrome ขออนุญาตดาวน์โหลดหลายไฟล์ ให้กดอนุญาต</small></div><small>บันทึกลง Downloads ของมือถือ ไม่ได้อัปโหลดขึ้น Google Drive; ต้องตรวจว่าไฟล์ปรากฏในเครื่องจริง</small></div></main><script>
-const $=id=>document.getElementById(id);let stream=null,recorder=null,chunks=[],tick=null,deadline=0,blobUrl=null,recording=false,lastBlob=null,lastMime="",lastFile="",savedRequested=false;const sleep=ms=>new Promise(r=>setTimeout(r,ms));function status(s){$('status').textContent=s}function format(n){return String(Math.floor(n/60)).padStart(2,'0')+':'+String(n%60).padStart(2,'0')}function resetPreview(){if(blobUrl)URL.revokeObjectURL(blobUrl);blobUrl=null;$('preview').pause();$('preview').removeAttribute('src');$('preview').style.display='none';$('live').style.display='block';$('saveTools').style.display='none';lastBlob=null;savedRequested=false;$('retry').disabled=true;$('timer').textContent='00:00'}
-$('open').onclick=async()=>{try{if(!navigator.mediaDevices?.getUserMedia)throw Error('เบราว์เซอร์นี้ไม่รองรับการเข้าถึงกล้อง');if(stream)stream.getTracks().forEach(t=>t.stop());resetPreview();stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:Number($('quality').value)*9/16},height:{ideal:Number($('quality').value)},frameRate:{ideal:30}},audio:false});$('live').srcObject=stream;await $('live').play();$('start').disabled=false;const track=stream.getVideoTracks()[0],cfg=track.getSettings();$('qualityInfo').textContent='ความละเอียดที่กล้องส่งจริง: '+(cfg.width||'?')+' × '+(cfg.height||'?')+' | '+(cfg.frameRate||'?')+' FPS (อาจไม่ใช่ความละเอียดไฟล์ที่บันทึก)';status('เปิดกล้องสำเร็จ ✓');}catch(e){status('เปิดกล้องไม่ได้: '+e.name+' — '+e.message+'\nตรวจสิทธิ์กล้องของเว็บไซต์นี้และ Chrome');}};
-$('start').onclick=async()=>{if(!stream||recording)return;const sec=Math.max(3,Math.min(120,Number($('seconds').value)||13));$('start').disabled=true;$('open').disabled=true;resetPreview();try{for(let i=3;i>0;i--){$('count').textContent=i;await sleep(1000)}$('count').textContent='';if(!stream.active)throw Error('กล้องถูกปิด');let mime=['video/mp4;codecs=avc1.42E01E','video/mp4','video/webm;codecs=vp8','video/webm'].find(t=>MediaRecorder.isTypeSupported(t));if(!mime)throw Error('เบราว์เซอร์ไม่รองรับการบันทึกวิดีโอ');chunks=[];recorder=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:Number($('quality').value)>=2160?24000000:Number($('quality').value)>=1080?12000000:6000000});recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};recorder.onerror=e=>status('เกิดข้อผิดพลาดระหว่างบันทึก: '+(e.error?.message||'ไม่ทราบสาเหตุ'));recorder.onstop=()=>{clearInterval(tick);recording=false;const b=new Blob(chunks,{type:recorder.mimeType||mime});if(!b.size){$('open').disabled=false;$('start').disabled=false;status('ไฟล์วิดีโอว่าง กรุณาถ่ายใหม่');return;}lastBlob=b;lastMime=recorder.mimeType||mime;blobUrl=URL.createObjectURL(b);$('preview').src=blobUrl;$('preview').style.display='block';$('live').style.display='none';$('retry').disabled=false;$('open').disabled=false;$('stop').disabled=true;$('timer').textContent=format(Math.round((Date.now()-deadline+sec*1000)/1000));const ext=lastMime.includes('mp4')?'mp4':'webm';const scene=shootData?.shots?.[shootData.selected];lastFile=shootData?(cleanFile(shootData.product)+'_Clip'+shootData.clip+'_Scene'+scene.no+'.'+ext):('camera-scene-'+Date.now()+'.'+ext);$('download').href=blobUrl;$('download').download=lastFile;$('saveTools').style.display='block';$('share').style.display=(navigator.canShare&&navigator.canShare({files:[new File([b],lastFile,{type:lastMime})]}))?'block':'none';$('saveNext').disabled=!shootData||shootData.selected>=shootData.shots.length-1;$('start').disabled=false;status('ถ่ายเสร็จ ✓ '+ext.toUpperCase()+' '+(b.size/1024/1024).toFixed(2)+' MB — กดบันทึกเพื่อดาวน์โหลดทันที')};recorder.start(250);recording=true;deadline=Date.now()+sec*1000;$('stop').disabled=false;tick=setInterval(()=>{const left=Math.max(0,Math.ceil((deadline-Date.now())/1000));$('timer').textContent=format(sec-left);if(left===0&&recorder?.state==='recording')recorder.stop()},200);status('กำลังบันทึก...');}catch(e){$('count').textContent='';$('start').disabled=false;$('open').disabled=false;status('เริ่มถ่ายไม่ได้: '+e.message)}};
-$('stop').onclick=()=>{if(recorder?.state==='recording')recorder.stop()};$('retry').onclick=()=>{if(lastBlob&&!savedRequested&&!confirm('คลิปนี้ยังไม่ได้กดบันทึก ต้องการถ่ายทับหรือไม่?'))return;resetPreview();$('start').disabled=!stream?.active;status('พร้อมถ่ายใหม่')};window.addEventListener('pagehide',()=>{if(stream)stream.getTracks().forEach(t=>t.stop());if(blobUrl)URL.revokeObjectURL(blobUrl)});
-</script><script>
-let shootData=null;
-function cleanFile(v){return String(v||'clip').replace(/[\\/:*?"<>|\u0000-\u001f]/g,'_').replace(/\s+/g,'_').slice(0,55)}
-function selectScene(i){if(!shootData)return;if(lastBlob&&!savedRequested&&!confirm('ยังไม่ได้กดบันทึกคลิปนี้ ต้องการเปลี่ยนฉากโดยไม่บันทึกหรือไม่?'))return;const shots=shootData.shots;i=Math.max(0,Math.min(shots.length-1,i));shootData.selected=i;const s=shots[i];$('sceneSelect').value=String(i);$('sceneTitle').textContent='ฉาก '+s.no+' — '+s.title;$('sceneDetails').textContent='📷 มุมกล้อง: '+s.angle+'\n🎬 การถ่าย: '+s.action+'\n💡 เคล็ดลับ: '+s.tip+(s.feature?'\n⭐ จุดเด่น: '+s.feature:'');$('seconds').value=Math.max(3,Math.min(120,Number(s.duration)||8));$('prevScene').disabled=i===0;$('nextScene').disabled=i===shots.length-1;resetPreview();$('start').disabled=!stream?.active;status('พร้อมถ่ายฉาก '+s.no+' — ถ่ายเสร็จกด บันทึก + ฉากถัดไป ได้เลย')}
-try{const raw=location.hash.startsWith('#plan=')?location.hash.slice(6):'';if(raw){const data=JSON.parse(decodeURIComponent(raw));if(data&&Array.isArray(data.shots)&&data.shots.length&&data.shots.length<=25){shootData=data;$('shootPlan').style.display='block';$('productName').textContent=data.product||'สินค้า';$('clipName').textContent='คลิป '+data.clip+' — '+(data.clipTitle||'');data.shots.forEach((s,i)=>{const o=document.createElement('option');o.value=String(i);o.textContent='ฉาก '+s.no+' — '+s.title;$('sceneSelect').appendChild(o)});$('sceneSelect').onchange=()=>selectScene(Number($('sceneSelect').value));$('prevScene').onclick=()=>selectScene(shootData.selected-1);$('nextScene').onclick=()=>selectScene(shootData.selected+1);selectScene(Number(data.selected)||0);history.replaceState(null,'',location.pathname+location.search)}}}catch(e){status('อ่านแผนถ่ายไม่สำเร็จ: '+e.message)}
-function downloadCurrent(){if(!lastBlob||!blobUrl){status('ยังไม่มีคลิปให้บันทึก');return false;}const a=document.createElement('a');a.href=blobUrl;a.download=lastFile;document.body.appendChild(a);a.click();a.remove();savedRequested=true;status('ส่งคำสั่งดาวน์โหลด '+lastFile+' แล้ว ✓\nตรวจไฟล์ใน Downloads ด้วย เพราะเว็บไซต์ยืนยันไม่ได้ว่า Android บันทึกสำเร็จจริง');return true;}
-$('saveOnly').onclick=()=>downloadCurrent();
-$('saveNext').onclick=()=>{if(!downloadCurrent())return;if(shootData&&shootData.selected<shootData.shots.length-1){const next=shootData.selected+1;setTimeout(()=>selectScene(next),450);}};
-$('download').onclick=()=>{savedRequested=true;status('ส่งคำสั่งดาวน์โหลดอีกครั้งแล้ว — ตรวจไฟล์ใน Downloads');};
-$('share').onclick=async()=>{if(!lastBlob)return;try{const file=new File([lastBlob],lastFile,{type:lastMime});await navigator.share({files:[file],title:lastFile});savedRequested=true;status('ส่งไฟล์ไปยังเมนูแชร์ของ Android แล้ว — ตรวจสอบว่าปลายทางบันทึกจริง');}catch(e){if(e.name!=='AbortError')status('แชร์ไม่สำเร็จ: '+e.message+' — ใช้ปุ่มดาวน์โหลดแทน')}};
-
-</script></body></html>
-<!-- Camera Studio V1.5 Native Camera Add-on: paste immediately before </body> in GitHub index.html -->
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Camera Studio V1.6 — Gallery Workflow</title>
 <style>
-#nativeCam15{position:fixed;inset:auto 10px 10px 10px;z-index:99999;background:#132039;color:white;border:1px solid #526782;border-radius:16px;padding:14px;box-shadow:0 8px 30px #0009;font:15px system-ui,sans-serif;max-width:520px;margin:auto}
-#nativeCam15 button{border:0;border-radius:10px;padding:12px 14px;margin:4px;background:#2563eb;color:white;font-weight:700}
-#nativeCam15 button:disabled{opacity:.45}#nativeCam15 .minor{background:#475569}#nativeCam15 .ok{background:#0f766e}
-#nativeCam15 .tiny{font-size:12px;color:#cbd5e1}#nativeCam15 .line{display:flex;gap:5px;flex-wrap:wrap}#nativeCam15 select{padding:9px;border-radius:8px;background:#fff;color:#111}
-</style>
-<div id="nativeCam15">
-  <div style="display:flex;justify-content:space-between;align-items:center"><strong>📱 ถ่ายด้วยกล้องมือถือ V1.5</strong><button class="minor" id="nc15Hide" type="button">ซ่อน</button></div>
-  <div id="nc15Context" class="tiny"></div>
-  <div class="line" style="align-items:center"><label for="nc15Clip">คลิป</label><select id="nc15Clip"></select><label for="nc15Scene">ฉาก</label><select id="nc15Scene"></select></div>
-  <div class="line"><button id="nc15Capture" type="button">📹 ถ่ายด้วยกล้องมือถือ</button><button id="nc15Save" class="ok" type="button" disabled>⬇️ บันทึกไฟล์</button><button id="nc15Next" type="button" disabled>ฉากถัดไป ➜</button></div>
-  <div id="nc15Status" class="tiny">เลือกคลิปและฉาก แล้วกดถ่าย</div>
-  <input id="nc15File" type="file" accept="video/*" capture="environment" style="display:none">
-</div>
-<button id="nc15Show" type="button" style="display:none;position:fixed;bottom:12px;right:12px;z-index:99999;padding:13px;border:0;border-radius:30px;background:#2563eb;color:white">📱 เปิดกล้องมือถือ</button>
-<script>
-(()=>{
+:root{font-family:system-ui,'Noto Sans Thai',sans-serif;color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0c1425;color:#eef2ff}main{max-width:680px;margin:auto;padding:16px}h1{font-size:1.45rem;margin:8px 0}p,small{color:#b8c4dd;line-height:1.55}.panel{background:#1b2942;border-radius:16px;padding:16px;margin:14px 0}.info{background:#24395a;border-radius:12px;padding:12px;margin:10px 0;white-space:pre-line;line-height:1.65}button,.button{padding:13px 12px;background:#743de6;color:white;border:0;border-radius:10px;font-size:1rem;text-align:center;text-decoration:none;font-weight:650;cursor:pointer}button:disabled{opacity:.45;cursor:not-allowed}button.alt{background:#33435d}button.ok{background:#087e69}button.warn{background:#955322}.buttons{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:12px 0}.full{width:100%;display:block}.meta{color:#c7d2fe;font-size:14px}.badge{display:inline-block;padding:5px 9px;border-radius:99px;background:#30476b;font-size:12px;margin:3px}.badge.done{background:#11684e}.scene{border:1px solid #405577;border-radius:10px;padding:11px;margin:8px 0}.scene.active{border-color:#b19bff;background:#283452}select{background:#0d1729;color:white;border:1px solid #65738d;border-radius:8px;padding:12px;width:100%;font-size:16px}label{display:block;margin:12px 0 6px;font-weight:650}video{width:100%;max-height:55vh;background:black;border-radius:12px;display:none;margin:10px 0}#status{white-space:pre-line;line-height:1.6;background:#15233a;border-radius:10px;padding:12px;color:#dce8ff}input[type=file]{width:100%;font-size:15px} .hide{display:none!important} .hint{border-left:3px solid #9b8afa;padding-left:10px}
+</style></head><body><main>
+<h1>📱 Camera Studio V1.6</h1><p>ถ่ายด้วยแอปกล้อง OPPO / vivo แล้วเลือกไฟล์จากแกลเลอรีเพื่อทำงานต่อเนื่องตามแผน</p>
+<div class="panel"><h2 style="margin-top:0">📋 แผนถ่าย</h2><div id="planTitle" class="meta">ยังไม่มีแผนส่งมาจาก Creator Studio — ทดลองแบบ 1 คลิป × 5 ฉากได้</div><label for="clipSelect">เลือกคลิป</label><select id="clipSelect"></select><label for="sceneSelect">เลือกฉาก</label><select id="sceneSelect"></select><div id="sceneInfo" class="info"></div><div id="progress" class="meta"></div></div>
+<div class="panel"><h2 style="margin-top:0">🎬 ขั้นตอนถ่ายทำ</h2><p class="hint"><b>ขั้นที่ 1</b> เปิดแอปกล้องปกติของมือถือ ถ่ายฉากที่แสดงด้านบน แล้วกดบันทึกลงแกลเลอรี จากนั้นกลับมาหน้านี้ใน Chrome</p><button id="copyGuide" class="alt full">📋 คัดลอกคำแนะนำฉาก (ไว้ดูระหว่างถ่าย)</button><p class="hint"><b>ขั้นที่ 2</b> เลือกคลิปที่เพิ่งถ่ายจากแกลเลอรี (ไม่เปิดกล้องเว็บและไม่ดาวน์โหลดซ้ำ)</p><label for="file">📂 เลือกวิดีโอจากมือถือ</label><input id="file" type="file" accept="video/*,.mp4,.mov,.webm,.3gp" />
+<div id="fileInfo" class="meta" style="margin-top:10px">ยังไม่ได้เลือกวิดีโอ</div><video id="preview" controls playsinline preload="metadata"></video><div class="buttons"><button id="confirm" class="ok" disabled>✓ ยืนยันฉากนี้</button><button id="clear" class="alt" disabled>เลือกไฟล์ใหม่</button></div><div class="buttons"><button id="prev" class="alt">← ฉากก่อน</button><button id="next">ฉากถัดไป →</button></div><p id="status" role="status">พร้อมใช้งาน — เริ่มจากถ่ายด้วยแอปกล้องมือถือก่อน</p><small>หมายเหตุ: การยืนยันจะบันทึกเฉพาะสถานะและชื่อไฟล์ไว้ในเบราว์เซอร์ ไม่ได้อัปโหลดวิดีโอขึ้น Google Drive และไม่รับประกันว่าไฟล์จะยังถูกเลือกไว้หลังรีเฟรช กรุณาเก็บต้นฉบับในแกลเลอรีไว้เสมอ</small></div>
+<div class="panel"><h3>📊 สถานะการถ่าย</h3><div id="shotStatus"></div><button id="reset" class="warn full">ล้างสถานะที่ยืนยันไว้ของแผนนี้</button></div>
+</main><script>
 'use strict';
-const $=id=>document.getElementById(id), p=new URLSearchParams(location.search);
-// These query keys are optional; the existing camera page remains untouched.
-const product=p.get('productName')||p.get('product')||p.get('name')||'สินค้า';
-const key='native-camera-v15:'+location.pathname+':'+product;
-let saved={};try{saved=JSON.parse(localStorage.getItem(key)||'{}')}catch(e){}
-let clip=Math.min(5,Math.max(1,Number(p.get('clip')||p.get('clipIndex')||saved.clip||1)));
-let scene=Math.min(5,Math.max(1,Number(p.get('scene')||p.get('shot')||p.get('sceneIndex')||saved.scene||1)));
-let pending=null, objectUrl=null, downloadStarted=false;
-const safe=s=>String(s).replace(/[\\/:*?"<>|\x00-\x1f]/g,'_').slice(0,55);
-const setStatus=s=>{$('nc15Status').textContent=s};
-function persist(){localStorage.setItem(key,JSON.stringify({clip,scene}))}
-function draw(){ $('nc15Clip').value=String(clip);$('nc15Scene').value=String(scene);$('nc15Context').textContent=product+' · คลิป '+clip+'/5 · ฉาก '+scene+'/5';persist() }
-for(let i=1;i<=5;i++){for(const id of ['nc15Clip','nc15Scene']){let o=document.createElement('option');o.value=String(i);o.textContent=String(i);$(id).appendChild(o)}}
-function resetPending(){pending=null;downloadStarted=false;$('nc15File').value='';$('nc15Save').disabled=true;$('nc15Next').disabled=true;if(objectUrl){URL.revokeObjectURL(objectUrl);objectUrl=null}}
-$('nc15Clip').onchange=e=>{clip=Number(e.target.value);scene=1;resetPending();draw()};
-$('nc15Scene').onchange=e=>{scene=Number(e.target.value);resetPending();draw()};
-$('nc15Capture').onclick=()=>{$('nc15File').click()};
-$('nc15File').onchange=e=>{
- const f=e.target.files&&e.target.files[0];if(!f){setStatus('ยังไม่ได้รับไฟล์วิดีโอ');return}
- if(!f.type.startsWith('video/') && !/\.(mp4|webm|mov|3gp)$/i.test(f.name)){setStatus('ไฟล์ที่เลือกไม่ใช่วิดีโอ');return}
- pending=f;downloadStarted=false;$('nc15Save').disabled=false;$('nc15Next').disabled=true;
- setStatus('รับวิดีโอแล้ว '+(f.size/1048576).toFixed(1)+' MB — กดบันทึกไฟล์ก่อนเปลี่ยนฉาก');
-};
-$('nc15Save').onclick=()=>{
- if(!pending)return;
- if(objectUrl)URL.revokeObjectURL(objectUrl);
- objectUrl=URL.createObjectURL(pending);
- const ext=(pending.name.match(/\.[a-z0-9]+$/i)||['.mp4'])[0];
- const a=document.createElement('a');a.href=objectUrl;a.download=safe(product)+'_Clip'+clip+'_Scene'+scene+ext;
- document.body.appendChild(a);a.click();a.remove();downloadStarted=true;
- $('nc15Next').disabled=false;
- setStatus('ส่งคำสั่งดาวน์โหลดแล้ว — ตรวจไฟล์ใน Downloads ก่อนกดฉากถัดไป (เว็บยืนยันผลบันทึกจริงไม่ได้)');
-};
-$('nc15Next').onclick=()=>{
- if(!downloadStarted)return;
- if(scene<5)scene++;else if(clip<5){clip++;scene=1}else{setStatus('ครบ 5 คลิป × 5 ฉากแล้ว');return}
- resetPending();draw();setStatus('พร้อมถ่ายฉากถัดไป — กดถ่ายด้วยกล้องมือถือ');
-};
-$('nc15Hide').onclick=()=>{$('nativeCam15').style.display='none';$('nc15Show').style.display='block'};
-$('nc15Show').onclick=()=>{$('nativeCam15').style.display='block';$('nc15Show').style.display='none'};
-window.addEventListener('pagehide',()=>{if(objectUrl)URL.revokeObjectURL(objectUrl)});
-draw();
-})();
-</script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'');
+let plan=null,clip=0,scene=0,pending=null,previewUrl=null,confirmed={};
+function status(s){$('status').textContent=s}
+function parsePlan(){
+ try{
+  const raw=location.hash.startsWith('#plan=')?location.hash.slice(6):'';
+  if(!raw)return null;
+  const d=JSON.parse(decodeURIComponent(raw));
+  if(!d||!Array.isArray(d.shots)||!d.shots.length||d.shots.length>25)throw Error('ข้อมูลฉากไม่ถูกต้อง');
+  const shots=d.shots.map((s,i)=>({no:Number(s.no)||i+1,title:esc(s.title||'ฉาก '+(i+1)),angle:esc(s.angle),tip:esc(s.tip),action:esc(s.action),feature:esc(s.feature),duration:Number(s.duration)||8}));
+  return {id:esc(d.planId||''),product:esc(d.product||'สินค้า'),clips:[{no:Number(d.clip)||1,title:esc(d.clipTitle||''),shots}],selected:Math.max(0,Math.min(shots.length-1,Number(d.selected)||0))};
+ }catch(e){status('อ่านแผนถ่ายไม่ได้: '+e.message);return null}
+}
+plan=parsePlan()||{id:'demo',product:'ทดลองถ่ายสินค้า',clips:[{no:1,title:'ทดลอง 5 ฉาก',shots:Array.from({length:5},(_,i)=>({no:i+1,title:'ฉาก '+(i+1),angle:'',tip:'',action:'ถ่ายสินค้าแล้วเลือกไฟล์กลับเข้าระบบ',feature:'',duration:8}))}],selected:0};
+const storeKey='camera-studio-v16:'+encodeURIComponent(plan.id||plan.product)+':'+plan.clips.map(c=>c.no).join('-');
+try{confirmed=JSON.parse(localStorage.getItem(storeKey)||'{}')||{}}catch(e){confirmed={}}
+function persist(){try{localStorage.setItem(storeKey,JSON.stringify(confirmed))}catch(e){status('พื้นที่เก็บสถานะของเบราว์เซอร์ไม่พร้อม แต่ยังเลือกไฟล์และถ่ายต่อได้')}}
+function current(){return plan.clips[clip].shots[scene]}
+function key(c=clip,s=scene){return plan.clips[c].no+':'+plan.clips[c].shots[s].no}
+function clearFile(){pending=null;$('file').value='';$('fileInfo').textContent='ยังไม่ได้เลือกวิดีโอ';$('confirm').disabled=true;$('clear').disabled=true;if(previewUrl){URL.revokeObjectURL(previewUrl);previewUrl=null}$('preview').pause();$('preview').removeAttribute('src');$('preview').style.display='none'}
+function canLeave(){return !pending||confirm('คุณเลือกวิดีโอไว้แต่ยังไม่ได้กดยืนยันฉาก ต้องการเปลี่ยนฉากและยกเลิกไฟล์ที่เลือกหรือไม่?')}
+function render(){
+ const c=plan.clips[clip],s=current();$('clipSelect').value=String(clip);$('sceneSelect').replaceChildren();c.shots.forEach((v,i)=>{const o=document.createElement('option');o.value=i;o.textContent='ฉาก '+v.no+' — '+v.title;$('sceneSelect').appendChild(o)});$('sceneSelect').value=String(scene);
+ $('planTitle').textContent=plan.product+' • คลิป '+c.no+' '+c.title;
+ $('sceneInfo').textContent='ฉาก '+s.no+' — '+s.title+'\n📷 มุมกล้อง: '+(s.angle||'ตามความเหมาะสม')+'\n🎬 วิธีถ่าย: '+(s.action||'ถ่ายสินค้า')+'\n💡 เคล็ดลับ: '+(s.tip||'-')+(s.feature?'\n⭐ จุดเด่น: '+s.feature:'')+'\n⏱️ เวลาแนะนำ: '+s.duration+' วินาที';
+ const done=c.shots.filter((_,i)=>!!confirmed[key(clip,i)]).length;
+ $('progress').textContent='คลิป '+c.no+': ยืนยันแล้ว '+done+' / '+c.shots.length+' ฉาก'+(confirmed[key()]?' • ฉากนี้ยืนยันแล้ว ✓':'');
+ $('prev').disabled=clip===0&&scene===0;$('next').textContent=(scene===c.shots.length-1&&clip===plan.clips.length-1)?'ครบฉากแล้ว ✓':'ฉากถัดไป →';
+ $('shotStatus').replaceChildren();c.shots.forEach((v,i)=>{const d=document.createElement('div');d.className='scene'+(i===scene?' active':'');const saved=confirmed[key(clip,i)];d.textContent=(saved?'✓ ':'○ ')+'ฉาก '+v.no+' — '+v.title+(saved?' | '+saved.name:'');$('shotStatus').appendChild(d)});
+}
+function move(c,s){if(!canLeave())return;clearFile();clip=c;scene=s;render();status('พร้อมถ่ายฉาก '+current().no+' — เปิดแอปกล้องมือถือ ถ่ายและบันทึก แล้วกลับมาเลือกไฟล์')}
+plan.clips.forEach((c,i)=>{const o=document.createElement('option');o.value=i;o.textContent='คลิป '+c.no+' — '+c.title;$('clipSelect').appendChild(o)});
+$('clipSelect').onchange=()=>{const i=Number($('clipSelect').value);if(i===clip)return;const old=clip;move(i,0);$('clipSelect').value=String(clip)};
+$('sceneSelect').onchange=()=>{const i=Number($('sceneSelect').value);if(i===scene)return;move(clip,i);$('sceneSelect').value=String(scene)};
+$('prev').onclick=()=>{if(scene>0)move(clip,scene-1);else if(clip>0)move(clip-1,plan.clips[clip-1].shots.length-1)};
+$('next').onclick=()=>{if(scene<plan.clips[clip].shots.length-1)move(clip,scene+1);else if(clip<plan.clips.length-1)move(clip+1,0);else status('ครบทุกฉากของแผนที่เปิดแล้ว ✓ ตรวจสอบสถานะด้านล่างได้')};
+$('file').onchange=()=>{const f=$('file').files?.[0];clearFile();if(!f)return;if(!(f.type.startsWith('video/')||/\.(mp4|mov|webm|3gp|m4v)$/i.test(f.name))){status('ไฟล์ที่เลือกไม่ใช่วิดีโอ');return}pending=f;$('fileInfo').textContent='ไฟล์: '+f.name+' • '+(f.size/1048576).toFixed(1)+' MB';previewUrl=URL.createObjectURL(f);$('preview').src=previewUrl;$('preview').style.display='block';$('confirm').disabled=false;$('clear').disabled=false;status('เลือกวิดีโอแล้ว — ตรวจตัวอย่างและกดยืนยันฉากนี้')};
+$('clear').onclick=()=>{clearFile();status('เลือกไฟล์ใหม่ได้เลย')};
+$('confirm').onclick=()=>{if(!pending)return;confirmed[key()]={name:pending.name,size:pending.size,at:new Date().toISOString()};persist();const name=pending.name;clearFile();render();status('ยืนยันฉาก '+current().no+' แล้ว ✓ ('+name+')\nต้นฉบับยังอยู่ในมือถือ กดฉากถัดไปเพื่อทำต่อ');};
+$('copyGuide').onclick=async()=>{const s=current(),txt=plan.product+' | คลิป '+plan.clips[clip].no+' | ฉาก '+s.no+'\n'+$('sceneInfo').textContent;try{await navigator.clipboard.writeText(txt);status('คัดลอกคำแนะนำฉากแล้ว')}catch(e){prompt('คัดลอกคำแนะนำ',txt)}};
+$('reset').onclick=()=>{if(!confirm('ล้างสถานะที่ยืนยันของแผนนี้ทั้งหมด? (ไม่ลบวิดีโอในมือถือ)'))return;confirmed={};persist();clearFile();render();status('ล้างสถานะแล้ว วิดีโอในมือถือไม่ได้ถูกลบ')};
+scene=plan.selected;render();
+window.addEventListener('pagehide',()=>{if(previewUrl)URL.revokeObjectURL(previewUrl)});
+</script></body></html>
